@@ -13,6 +13,45 @@ UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
+# Dummy Database for DigiLocker matches
+DUMMY_DIGILOCKER_DB = {
+    # 7 Global Aadhaar Numbers (Access to all)
+    "111111111111": ["income", "marksheet_10", "marksheet_12", "first_graduate"],
+    "222222222222": ["income", "marksheet_10", "marksheet_12", "first_graduate"],
+    "333333333333": ["income", "marksheet_10", "marksheet_12", "first_graduate"],
+    "444444444444": ["income", "marksheet_10", "marksheet_12", "first_graduate"],
+    "555555555555": ["income", "marksheet_10", "marksheet_12", "first_graduate"],
+    "666666666666": ["income", "marksheet_10", "marksheet_12", "first_graduate"],
+    "777777777777": ["income", "marksheet_10", "marksheet_12", "first_graduate"],
+    
+    # 7 Income Certificate IDs
+    "INC1000001": ["income"],
+    "INC1000002": ["income"],
+    "INC1000003": ["income"],
+    "INC1000004": ["income"],
+    "INC1000005": ["income"],
+    "INC1000006": ["income"],
+    "INC1000007": ["income"],
+
+    # 7 10th Marksheet IDs
+    "TEN1000001": ["marksheet_10"],
+    "TEN1000002": ["marksheet_10"],
+    "TEN1000003": ["marksheet_10"],
+    "TEN1000004": ["marksheet_10"],
+    "TEN1000005": ["marksheet_10"],
+    "TEN1000006": ["marksheet_10"],
+    "TEN1000007": ["marksheet_10"],
+
+    # 7 12th Marksheet IDs
+    "TWL1000001": ["marksheet_12"],
+    "TWL1000002": ["marksheet_12"],
+    "TWL1000003": ["marksheet_12"],
+    "TWL1000004": ["marksheet_12"],
+    "TWL1000005": ["marksheet_12"],
+    "TWL1000006": ["marksheet_12"],
+    "TWL1000007": ["marksheet_12"],
+}
+
 def dict_factory(cursor, row):
     d = {}
     for idx, col in enumerate(cursor.description):
@@ -108,14 +147,17 @@ def get_profile_status(id):
         student = cursor.fetchone()
         if not student: return jsonify({'error': 'Not found'}), 404
         
-        cursor.execute("SELECT doc_type FROM Documents WHERE student_id = ?", (id,))
-        docs = [r['doc_type'] for r in cursor.fetchall()]
+        cursor.execute("SELECT doc_type, is_digilocker FROM Documents WHERE student_id = ?", (id,))
+        rows = cursor.fetchall()
+        docs = [r['doc_type'] for r in rows]
+        digilocker_docs = [r['doc_type'] for r in rows if r.get('is_digilocker')]
         
         return jsonify({
             'has_ongoing_scholarship': student['has_ongoing_scholarship'],
             'ai_trust_score': student['ai_trust_score'],
             'mismatch_attempts': student['mismatch_attempts'],
-            'uploaded_docs': docs
+            'uploaded_docs': docs,
+            'digilocker_docs': digilocker_docs
         })
     finally:
         conn.close()
@@ -278,6 +320,52 @@ def upload_document():
         return jsonify({'message': f'Document {doc_type} verified and securely stored successfully.', 'trust_score': student_data.get('ai_trust_score', 100)})
     except Exception as e:
         # Pass Tesseract error completely through to UI natively for testing
+        return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()
+
+@app.route('/api/digilocker/fetch', methods=['POST'])
+def digilocker_fetch():
+    data = request.json
+    student_id = data.get('student_id')
+    doc_type = data.get('doc_type')
+    digilocker_id = data.get('digilocker_id')
+
+    if not student_id or not doc_type or not digilocker_id:
+        return jsonify({'error': 'student_id, doc_type, and DigiLocker ID / Aadhaar required'}), 400
+
+    # Dummy Database Match Logic
+    user_docs = DUMMY_DIGILOCKER_DB.get(str(digilocker_id))
+    if not user_docs:
+        return jsonify({'error': "Data doesn't match! Invalid DigiLocker ID or Aadhaar."}), 400
+    
+    if doc_type not in user_docs:
+        return jsonify({'error': f"Document '{doc_type}' not found in your DigiLocker account."}), 400
+
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT is_locked FROM Documents WHERE student_id = ? AND is_locked = 1 LIMIT 1", (student_id,))
+        if cursor.fetchone():
+            return jsonify({'error': 'Documents are locked for an active application'}), 400
+
+        filepath = f"digilocker_verified_{doc_type}.pdf"
+
+        cursor.execute("SELECT id FROM Documents WHERE student_id = ? AND doc_type = ?", (student_id, doc_type))
+        existing = cursor.fetchone()
+        if existing:
+            cursor.execute("UPDATE Documents SET file_path = ?, is_digilocker = 1 WHERE id = ?", (filepath, existing['id']))
+        else:
+            cursor.execute("INSERT INTO Documents (student_id, doc_type, file_path, is_digilocker) VALUES (?, ?, ?, 1)",
+                           (student_id, doc_type, filepath))
+                           
+        conn.commit()
+        
+        cursor.execute("SELECT ai_trust_score FROM Students WHERE id = ?", (student_id,))
+        score = cursor.fetchone()['ai_trust_score']
+        
+        return jsonify({'message': f'{doc_type} fetched securely from DigiLocker! Verification skipped.', 'trust_score': score})
+    except Exception as e:
         return jsonify({'error': str(e)}), 500
     finally:
         conn.close()

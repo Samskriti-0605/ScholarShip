@@ -104,6 +104,37 @@ export default function StudentDashboard() {
     }
   };
 
+  const fetchFromDigilocker = async (e) => {
+    e.preventDefault();
+    const hint = docType === 'income' ? 'e.g., INC1000001 or Aadhaar' 
+               : docType === 'marksheet_10' ? 'e.g., TEN1000001 or Aadhaar'
+               : docType === 'marksheet_12' ? 'e.g., TWL1000001 or Aadhaar'
+               : 'e.g., 111111111111';
+    const aadhar = window.prompt(`Enter your ID / Certificate Number for ${docType} (${hint}):`);
+    if (!aadhar || aadhar.trim() === "") {
+        return;
+    }
+
+    setLoadingMsg("Connecting to Gov DigiLocker...");
+    setTimeout(async () => {
+        try {
+            const res = await api.post('/digilocker/fetch', { 
+                student_id: user.id, 
+                doc_type: docType,
+                digilocker_id: aadhar.trim()
+            });
+            fetchProfile(user.id);
+            setFile(null);
+            alert(res.data.message || "Document verified via DigiLocker!");
+        } catch (err) {
+            alert(err.response?.data?.error || "Data doesn't match! DigiLocker verification failed.");
+            fetchProfile(user.id);
+        } finally {
+            setLoadingMsg("");
+        }
+    }, 1500);
+  };
+
   if (!user || !profileStatus) return <div className="min-h-screen flex items-center justify-center font-bold text-indigo-500 animate-pulse text-2xl">Loading Workspace...</div>;
 
   const requiredDocs = [
@@ -113,6 +144,7 @@ export default function StudentDashboard() {
     { id: 'first_graduate', label: 'First Graduate Cert' }
   ];
   const uploadedDocs = profileStatus?.uploaded_docs || [];
+  const digilockerDocs = profileStatus?.digilocker_docs || [];
   const missingDocs = requiredDocs.filter(d => !uploadedDocs.includes(d.id));
   const hasOngoing = profileStatus.has_ongoing_scholarship;
   const isProfileComplete = hasOngoing !== null && missingDocs.length === 0;
@@ -182,7 +214,7 @@ export default function StudentDashboard() {
                         <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 block">Document Type</label>
                         <select value={docType} onChange={e => setDocType(e.target.value)} className="w-full p-3.5 bg-white/80 border-2 border-slate-100 focus:border-purple-400 rounded-xl outline-none transition font-semibold text-slate-700 shadow-sm cursor-pointer">
                             {requiredDocs.map(d => (
-                              <option key={d.id} value={d.id}>{d.label} {uploadedDocs.includes(d.id) ? '✅' : ''}</option>
+                              <option key={d.id} value={d.id}>{d.label} {digilockerDocs.includes(d.id) ? '🏛️ (DigiLocker)' : uploadedDocs.includes(d.id) ? '✅' : ''}</option>
                             ))}
                         </select>
                     </div>
@@ -195,9 +227,14 @@ export default function StudentDashboard() {
                             <input type="file" accept="image/*" onChange={e => setFile(e.target.files[0])} className="hidden" />
                         </label>
                     </div>
-                    <button type="submit" className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white p-4 rounded-xl font-extrabold flex justify-center items-center shadow-lg shadow-purple-500/30 hover:shadow-purple-500/50 hover:-translate-y-0.5 transition duration-300">
-                        Upload & Run AI Scan
-                    </button>
+                    <div className="flex flex-col sm:flex-row gap-3">
+                        <button type="submit" className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white p-4 rounded-xl font-extrabold flex justify-center items-center shadow-lg shadow-purple-500/30 hover:shadow-purple-500/50 hover:-translate-y-0.5 transition duration-300">
+                            Upload Image 
+                        </button>
+                        <button type="button" onClick={fetchFromDigilocker} className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 text-white p-4 rounded-xl font-extrabold flex justify-center items-center shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/50 hover:-translate-y-0.5 transition duration-300">
+                            DigiLocker Fetch 🏛️
+                        </button>
+                    </div>
                     <p className="text-[11px] font-semibold text-slate-500 bg-slate-100 p-3 rounded-xl border border-slate-200 shadow-inner">
                         <span className="text-rose-600 font-black block mb-1">WARNING: Strict AI OCR Enforced ⚡</span>
                         Uploading mismatched or fake documents will result in malpractice deduction to your AI Trust Score.
@@ -229,12 +266,16 @@ export default function StudentDashboard() {
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                         {requiredDocs.map(d => (
                             <div key={d.id} className={`p-4 rounded-xl border flex flex-col items-center justify-center text-center transition-all ${uploadedDocs.includes(d.id) ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'}`}>
-                                {uploadedDocs.includes(d.id) ? (
+                                {digilockerDocs.includes(d.id) ? (
+                                    <svg className="w-8 h-8 text-emerald-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                                ) : uploadedDocs.includes(d.id) ? (
                                     <svg className="w-8 h-8 text-emerald-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                                 ) : (
                                     <svg className="w-8 h-8 text-slate-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                                 )}
-                                <span className={`text-xs font-bold ${uploadedDocs.includes(d.id) ? 'text-emerald-700' : 'text-slate-500'}`}>{d.label}</span>
+                                <span className={`text-xs font-bold ${uploadedDocs.includes(d.id) ? 'text-emerald-700' : 'text-slate-500'}`}>
+                                    {d.label} {digilockerDocs.includes(d.id) && <span className="block text-[9px] text-emerald-600 font-black tracking-widest uppercase mt-0.5">DigiLocker 🏛️</span>}
+                                </span>
                             </div>
                         ))}
                     </div>

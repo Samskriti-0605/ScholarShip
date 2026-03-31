@@ -41,6 +41,7 @@ CREATE TABLE Documents (
     doc_type ENUM('income', 'marksheet', 'id') NOT NULL,
     file_path VARCHAR(255) NOT NULL,
     is_locked BOOLEAN DEFAULT FALSE,
+    is_digilocker BOOLEAN DEFAULT FALSE,
     FOREIGN KEY (student_id) REFERENCES Students(id) ON DELETE CASCADE
 );
 
