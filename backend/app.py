@@ -50,6 +50,7 @@ DUMMY_DIGILOCKER_DB = {
     "TWL1000005": ["marksheet_12"],
     "TWL1000006": ["marksheet_12"],
     "TWL1000007": ["marksheet_12"],
+    "33208534": ["marksheet_12"],
 }
 
 def dict_factory(cursor, row):
